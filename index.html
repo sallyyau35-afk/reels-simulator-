@@ -53,6 +53,18 @@
   #fallback[hidden] { display: none; }
   .pick { display: inline-block; background: #0095f6; color: #fff; padding: 11px 22px; border-radius: 10px; font-weight: 600; font-size: 15px; }
   input[type=file] { display: none; }
+
+html, body {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: pan-y;
+}
+
+#feed {
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+ 
 </style>
 </head>
 <body>
@@ -301,17 +313,42 @@ document.addEventListener("pointerdown", keepAwake, { once: true });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepAwake(); });
 
 /* ---------- 電腦測試：↑↓ 切換、撳住 → 慢動作 ---------- */
-const feedElement = document.querySelector("#feed");
+let touchStartX = 0;
+let touchStartY = 0;
 
-if (feedElement) {
-  document.addEventListener("touchmove", e => {
-    if (!e.target.closest("#feed")) {
-      e.preventDefault();
-    }
-  }, { passive: false });
-}
+document.addEventListener("touchstart", e => {
+  if (e.touches.length > 1) {
+    e.preventDefault();
+    return;
+  }
 
- 
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}, { passive: false });
+
+document.addEventListener("touchmove", e => {
+  // 禁止兩隻手指縮放
+  if (e.touches.length > 1) {
+    e.preventDefault();
+    return;
+  }
+
+  const dx = Math.abs(e.touches[0].clientX - touchStartX);
+  const dy = Math.abs(e.touches[0].clientY - touchStartY);
+
+  // 禁止左右滑動，保留上下滑動
+  if (dx > dy) {
+    e.preventDefault();
+  }
+}, { passive: false });
+
+document.addEventListener("gesturestart", e => {
+  e.preventDefault();
+});
+
+document.addEventListener("dblclick", e => {
+  e.preventDefault();
+}, { passive: false });
 </script>
 </body>
 </html>
