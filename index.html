@@ -301,16 +301,15 @@ document.addEventListener("pointerdown", keepAwake, { once: true });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepAwake(); });
 
 /* ---------- 電腦測試：↑↓ 切換、撳住 → 慢動作 ---------- */
-document.addEventListener("keydown", e => {
-  const h = feed.clientHeight;
-  if (e.key === "ArrowDown") { e.preventDefault(); feed.scrollBy({ top: h, behavior: "smooth" }); }
-  else if (e.key === "ArrowUp") { e.preventDefault(); feed.scrollBy({ top: -h, behavior: "smooth" }); }
-  else if (e.key === "ArrowRight" && !e.repeat && active) { e.preventDefault(); active._startSlow(); }
-});
-document.addEventListener("keyup", e => {
-  if (e.key === "ArrowRight" && active) { active._v.playbackRate = 1; active._badge.classList.remove("show"); }
-});
+const feedElement = document.querySelector("#feed");
 
+if (feedElement) {
+  document.addEventListener("touchmove", e => {
+    if (!e.target.closest("#feed")) {
+      e.preventDefault();
+    }
+  }, { passive: false });
+}
 
  
 </script>
