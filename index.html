@@ -311,9 +311,7 @@ document.addEventListener("keyup", e => {
   if (e.key === "ArrowRight" && active) { active._v.playbackRate = 1; active._badge.classList.remove("show"); }
 });
 
-document.addEventListener("touchmove", e => {
-  if (!e.target.closest("#feed")) e.preventDefault();
-}, { passive: false });
+
  
 </script>
 </body>
