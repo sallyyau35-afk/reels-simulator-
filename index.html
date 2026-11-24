@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<title>Loop</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+  html, body { margin: 0; height: 100%; background: #111; font-family: -apple-system, "PingFang HK", "Helvetica Neue", sans-serif; color: #fff; overscroll-behavior: none; touch-action: pan-y; }
+  body { display: flex; justify-content: center; align-items: center; }
+
+  #phone { position: relative; width: 100vw; height: 100vh; height: 100dvh; background: #000; overflow: hidden; }
+  @media (min-width: 600px) {
+    #phone { width: min(100vw, 56.25vh); height: min(100vh, 177.78vw); border-radius: 24px; box-shadow: 0 0 0 1px #333, 0 20px 60px rgba(0,0,0,.6); }
+  }
+
+  #feed { height: 100%; overflow-y: scroll; scroll-snap-type: y mandatory; scrollbar-width: none; overscroll-behavior: none; }
+  #feed::-webkit-scrollbar { display: none; }
+
+  .slide { position: relative; height: 100%; scroll-snap-align: start; scroll-snap-stop: always; background: #000; user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+  .slide video { width: 100%; height: 100%; object-fit: cover; background: #000; pointer-events: none; }
+  .slide::after { content: ""; position: absolute; inset: auto 0 0 0; height: 40%; background: linear-gradient(transparent, rgba(0,0,0,.65)); pointer-events: none; }
+
+  .info { position: absolute; left: 14px; right: 80px; bottom: calc(28px + env(safe-area-inset-bottom)); z-index: 2; pointer-events: none; }
+  .user { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; }
+  .avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg,#f9a03f,#e1306c,#833ab4); flex: none; }
+  .follow { pointer-events: auto; border: 1px solid #fff; background: none; color: #fff; border-radius: 8px; padding: 3px 10px; font-size: 13px; font-weight: 600; }
+  .follow.on { opacity: .6; }
+  .caption { margin-top: 10px; font-size: 14px; line-height: 1.35; max-height: 3.9em; overflow: hidden; }
+  .caption:empty { display: none; }
+
+  .actions { position: absolute; right: 10px; bottom: calc(36px + env(safe-area-inset-bottom)); z-index: 3; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+  .btn { background: none; border: none; color: #fff; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; padding: 0; }
+  .btn svg { width: 30px; height: 30px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 3px rgba(0,0,0,.5)); transition: transform .15s; }
+  .btn:active svg { transform: scale(.85); }
+  .btn.liked svg { fill: #ff3040; stroke: #ff3040; }
+
+  .heart { position: absolute; z-index: 4; width: 110px; height: 110px; margin: -55px 0 0 -55px; pointer-events: none; opacity: 0; fill: #ff3040; }
+  .heart.go { animation: pop .8s ease-out; }
+  @keyframes pop { 0%{opacity:0;transform:scale(.3)} 20%{opacity:1;transform:scale(1.15)} 40%{transform:scale(.95)} 80%{opacity:1} 100%{opacity:0;transform:scale(1.1) translateY(-20px)} }
+
+  .badge { position: absolute; top: calc(24px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 5; padding: 7px 16px; border-radius: 999px; background: rgba(0,0,0,.55); backdrop-filter: blur(6px); font-size: 14px; font-weight: 700; opacity: 0; transition: opacity .15s; pointer-events: none; white-space: nowrap; }
+  .badge.show { opacity: 1; }
+
+  .progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.25); z-index: 5; }
+  .progress i { display: block; height: 100%; width: 0; background: #fff; }
+
+  #fallback { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: #000; }
+  #fallback[hidden] { display: none; }
+  .pick { display: inline-block; background: #0095f6; color: #fff; padding: 11px 22px; border-radius: 10px; font-weight: 600; font-size: 15px; }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+<div id="phone">
+  <div id="feed"></div>
+  <div id="fallback" hidden>
+    <label class="pick" for="file">揀影片</label>
+    <input type="file" id="file" accept="video/*">
+  </div>
+</div>
+
+<script>
+/* ============ 設定 ============ */
+const VIDEO_SRC = "myvideo.mp4";   // 影片檔名（同呢個 html 放同一個資料夾）
+const CAPTION   = "";              // 影片下面嘅文字，留空就唔顯示
+const SEG_MIN = 3, SEG_MAX = 7;    // 每一段隨機長度（秒）
+const HOLD_MS = 220;               // 撳住幾耐算「撳住」
+const SLOWS = [                    // 撳住嘅時候隨機抽一個
+  { rate: 1/2, label: "2x" },
+  { rate: 1/3, label: "3x" },
+  { rate: 1/4, label: "3x" }
+];
+/* ============================== */
+
+const feed = document.getElementById("feed");
+const fallback = document.getElementById("fallback");
+let SRC = VIDEO_SRC;
+let segments = [], bag = [], lastSeg = -1, slideCount = 0;
+let muted = true;          // 一開先靜音（瀏覽器規定先可以自動播）
+let active = null;
+
+const ICON = {
+  heart: '<svg viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>',
+  comment: '<svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 21l1.9-5.4A8.4 8.4 0 1 1 21 11.5z"/></svg>',
+  share: '<svg viewBox="0 0 24 24"><path d="M22 3 11 14"/><path d="M22 3l-7 19-4-8-8-4z"/></svg>',
+  more: '<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></svg>'
+};
+const HEART_BIG = '<svg class="heart" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>';
+const fmt = n => n >= 1000 ? (n/1000).toFixed(1) + "K" : String(n);
+
+/* ---------- 將影片切成隨機長度嘅段落，打亂次序（插敘） ---------- */
+function buildSegments(D) {
+  segments = []; bag = []; lastSeg = -1;
+  let t = 0;
+  while (t < D - 0.5) {
+    const end = Math.min(D, t + SEG_MIN + Math.random() * (SEG_MAX - SEG_MIN));
+    segments.push({ start: t, end });
+    t = end;
+  }
+  if (!segments.length) segments.push({ start: 0, end: D });
+}
+function nextSegment() {
+  if (!bag.length) {
+    bag = segments.map((_, i) => i);
+    for (let i = bag.length - 1; i > 0; i--) {           // 洗牌
+      const j = Math.floor(Math.random() * (i + 1));
+      [bag[i], bag[j]] = [bag[j], bag[i]];
+    }
+    // 避免新一輪頭一段同上一段一樣
+    if (bag.length > 1 && bag[bag.length - 1] === lastSeg) [bag[0], bag[bag.length - 1]] = [bag[bag.length - 1], bag[0]];
+  }
+  lastSeg = bag.pop();
+  return segments[lastSeg];
+}
+
+/* ---------- 播放控制 ---------- */
+function activate(slide) {
+  active = slide;
+  const v = slide._v, seg = slide._seg;
+  const go = () => {
+    v.currentTime = seg.start;
+    v.muted = muted;
+    v.playbackRate = 1;
+    const p = v.play();
+    if (p) p.catch(() => { v.muted = true; v.play().catch(() => {}); });
+  };
+  if (!v.getAttribute("src")) { v.src = SRC; v.addEventListener("loadedmetadata", go, { once: true }); v.load(); }
+  else if (v.readyState >= 1) go();
+  else v.addEventListener("loadedmetadata", go, { once: true });
+
+  // 釋放太舊嘅頁面，慳記憶體
+  const idx = [...feed.children].indexOf(slide);
+  [...feed.children].forEach((s, i) => {
+    if (i < idx - 2 && s._v.getAttribute("src")) { s._v.pause(); s._v.removeAttribute("src"); s._v.load(); }
+  });
+  if (idx >= feed.children.length - 2) addSlide();      // 無限向下
+}
+function deactivate(slide) {
+  const v = slide._v;
+  v.pause(); v.playbackRate = 1;
+  slide._badge.classList.remove("show");
+  if (active === slide) active = null;
+}
+
+const io = new IntersectionObserver(entries => {
+  entries.forEach(en => {
+    if (en.isIntersecting && en.intersectionRatio > 0.6) activate(en.target);
+    else if (en.target === active || en.target._v.currentTime) deactivate(en.target);
+  });
+}, { threshold: [0, 0.6, 1] });
+
+// 每一幀檢查：到咗段落尾就跳返段落頭（只喺呢一段內 loop）
+function tick() {
+  if (active) {
+    const v = active._v, s = active._seg;
+    if (v.readyState >= 2 && v.currentTime >= s.end - 0.05) {
+      v.currentTime = s.start;
+      if (v.paused) v.play().catch(() => {});
+    }
+    const len = s.end - s.start;
+    if (len > 0) active._bar.style.width = Math.max(0, Math.min(100, (v.currentTime - s.start) / len * 100)) + "%";
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* ---------- 建立一頁 ---------- */
+function addSlide() { feed.appendChild(makeSlide(slideCount++)); }
+function ensureMore() { while (feed.children.length < 3) addSlide(); }
+
+function makeSlide(idx) {
+  const slide = document.createElement("section");
+  slide.className = "slide";
+  const likes = Math.floor(Math.random() * 9000) + 100;
+  const comments = Math.floor(Math.random() * 400) + 5;
+  slide._seg = nextSegment();
+
+  slide.innerHTML = `
+    <video src="${SRC}" muted playsinline webkit-playsinline preload="auto"></video>
+    ${HEART_BIG}
+    <div class="badge"></div>
+    <div class="info">
+      <div class="user"><div class="avatar"></div><span>66uo</span><button class="follow">追蹤</button></div>
+      <div class="caption">${CAPTION.replace(/[<>&]/g, "")}</div>
+    </div>
+    <div class="actions">
+      <button class="btn like">${ICON.heart}<span class="lc">${fmt(likes)}</span></button>
+      <button class="btn">${ICON.comment}<span>${fmt(comments)}</span></button>
+      <button class="btn">${ICON.share}<span>分享</span></button>
+      <button class="btn">${ICON.more}</button>
+    </div>
+    <div class="progress"><i></i></div>`;
+
+  const v = slide._v = slide.querySelector("video");
+  const badge = slide._badge = slide.querySelector(".badge");
+  slide._bar = slide.querySelector(".progress i");
+  const heart = slide.querySelector(".heart");
+  const likeBtn = slide.querySelector(".like");
+  const lc = slide.querySelector(".lc");
+  let count = likes;
+
+  v.addEventListener("ended", () => { v.currentTime = slide._seg.start; v.play().catch(() => {}); });
+
+  function setLike(on) {
+    if (likeBtn.classList.contains("liked") === on) return;
+    likeBtn.classList.toggle("liked", on);
+    count += on ? 1 : -1; lc.textContent = fmt(count);
+  }
+  likeBtn.onclick = e => { e.stopPropagation(); setLike(!likeBtn.classList.contains("liked")); };
+  slide.querySelector(".follow").onclick = e => { e.stopPropagation(); e.target.classList.toggle("on"); e.target.textContent = e.target.classList.contains("on") ? "已追蹤" : "追蹤"; };
+  slide.querySelectorAll(".btn, .follow").forEach(b => b.addEventListener("pointerdown", e => e.stopPropagation()));
+
+  // 撳住 = 想「加速」，結果隨機慢 2/3/4 倍；雙擊 = Like；單擊冇作用（唔可以暫停）
+  let holdTimer = null, held = false, lastTap = 0;
+  function startSlow() {
+    const s = SLOWS[Math.floor(Math.random() * SLOWS.length)];
+    v.playbackRate = s.rate;
+    badge.textContent = s.label;
+    badge.classList.add("show");
+  }
+  function endHold() {
+    clearTimeout(holdTimer);
+    if (held) { v.playbackRate = 1; badge.classList.remove("show"); }
+    held = false;
+  }
+  slide.addEventListener("pointerdown", () => {
+    held = false;
+    holdTimer = setTimeout(() => { held = true; startSlow(); }, HOLD_MS);
+  });
+  slide.addEventListener("pointerup", e => {
+    const wasHeld = held;
+    endHold();
+    if (wasHeld) return;
+    const now = Date.now();
+    if (now - lastTap < 300) {
+      lastTap = 0;
+      const r = slide.getBoundingClientRect();
+      heart.style.left = (e.clientX - r.left) + "px";
+      heart.style.top = (e.clientY - r.top) + "px";
+      heart.classList.remove("go"); void heart.getBoundingClientRect(); heart.classList.add("go");
+      setLike(true);
+    } else lastTap = now;
+  });
+  slide.addEventListener("pointercancel", endHold);
+  slide.addEventListener("pointerleave", endHold);
+  slide._startSlow = startSlow; slide._endHold = endHold;
+
+  io.observe(slide);
+  return slide;
+}
+
+/* ---------- 一開就播：先讀影片長度，再起頁面 ---------- */
+function start() {
+  [...feed.children].forEach(s => { io.unobserve(s); s.remove(); });
+  slideCount = 0; active = null;
+  if (!SRC) { fallback.hidden = false; return; }
+  const probe = document.createElement("video");
+  probe.preload = "metadata"; probe.muted = true;
+  probe.onloadedmetadata = () => {
+    fallback.hidden = true;
+    buildSegments(probe.duration || 10);
+    ensureMore();
+  };
+  probe.onerror = () => { fallback.hidden = false; };   // 搵唔到影片 → 顯示手動揀影片
+  probe.src = SRC;
+}
+document.getElementById("file").addEventListener("change", e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  SRC = URL.createObjectURL(f);
+  start();
+});
+start();
+
+/* ---------- 第一次掂畫面就開聲 ---------- */
+function unlockSound() {
+  muted = false;
+  document.querySelectorAll("video").forEach(v => v.muted = false);
+  if (active && active._v.paused) active._v.play().catch(() => {});
+}
+["pointerdown", "touchstart", "keydown"].forEach(ev => document.addEventListener(ev, unlockSound, { once: true, passive: true }));
+
+/* ---------- 盡量唔俾人退出 ---------- */
+history.pushState({ k: 1 }, "", location.href);
+window.addEventListener("popstate", () => history.pushState({ k: 1 }, "", location.href));
+window.addEventListener("beforeunload", e => { e.preventDefault(); e.returnValue = ""; });
+document.addEventListener("contextmenu", e => e.preventDefault());
+document.addEventListener("gesturestart", e => e.preventDefault());
+document.addEventListener("dblclick", e => e.preventDefault());
+
+/* ---------- 螢幕長亮 ---------- */
+let wakeLock = null;
+async function keepAwake() { try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {} }
+keepAwake();
+document.addEventListener("pointerdown", keepAwake, { once: true });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepAwake(); });
+
+/* ---------- 電腦測試：↑↓ 切換、撳住 → 慢動作 ---------- */
+document.addEventListener("keydown", e => {
+  const h = feed.clientHeight;
+  if (e.key === "ArrowDown") { e.preventDefault(); feed.scrollBy({ top: h, behavior: "smooth" }); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); feed.scrollBy({ top: -h, behavior: "smooth" }); }
+  else if (e.key === "ArrowRight" && !e.repeat && active) { e.preventDefault(); active._startSlow(); }
+});
+document.addEventListener("keyup", e => {
+  if (e.key === "ArrowRight" && active) { active._v.playbackRate = 1; active._badge.classList.remove("show"); }
+});
+</script>
+</body>
+</html>
